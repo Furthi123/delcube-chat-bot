@@ -1,65 +1,50 @@
 /**
- * ═══════════════════════════════════════════════════════
- *  chat.js — Einzige Stelle für Feld-Konfiguration
- *
- *  NUR HIER ÄNDERN:
- *  1. FELDER → welche Infos gesammelt werden
- *  2. SYSTEM_PROMPT → wie der Bot fragt
- *
- *  Alles andere (Summary-Card, E-Mail) passt sich
- *  automatisch an — kein weiterer Code nötig.
- * ═══════════════════════════════════════════════════════
+ * chat.js — NUR HIER FELDER + PROMPT ÄNDERN
+ * Alle anderen Dateien passen sich automatisch an.
  */
 
-// ════════════════════════════════════════════════════
-//  FELDER — nur hier ändern
-//  key:    JSON-Schlüssel (kein Leerzeichen, keine Umlaute)
-//  label:  Anzeige-Name in Summary-Card und E-Mail
-//  pflicht: true = Bot fragt solange bis Antwort kommt
-// ════════════════════════════════════════════════════
+// ── FELDER: hier hinzufügen / entfernen / umbenennen ──
 const FELDER = [
-  { key: 'vorstellungen', label: 'Vorstellungen',    pflicht: true  },
-  { key: 'groesse',       label: 'Größe',            pflicht: true  },
-  { key: 'farbe',         label: 'Farbe & Oberfläche', pflicht: true },
-  { key: 'email',         label: 'E-Mail',           pflicht: true  },
-  { key: 'notizen',       label: 'Notizen',          pflicht: false },
+  { key: 'was',            label: 'Was',              pflicht: true  },
+  { key: 'groesse',        label: 'Größe',            pflicht: true  },
+  { key: 'farbe',          label: 'Farbe & Oberfläche', pflicht: true },
+  { key: 'zeitrahmen',     label: 'Zeitrahmen',       pflicht: true  },
+  { key: 'email',          label: 'E-Mail',           pflicht: true  },
+  { key: 'notizen',        label: 'Notizen',          pflicht: false },
 ];
 
-// ════════════════════════════════════════════════════
-//  SYSTEM PROMPT — Gesprächsverhalten anpassen
-// ════════════════════════════════════════════════════
+// ── SYSTEM PROMPT: Gesprächsverhalten ────────────────
 const SYSTEM_PROMPT = `
-Du bist der Chat-Assistent von delcube.com. Wir bauen individuelle Art Toys - 100% Handarbeit
+Du bist der Chat-Assistent von delcube.com. Wir bauen individuelle Art Toys – 3D-gedruckt, handnachbearbeitet, 100–150€, max. 250mm.
 
 REGELN:
-- Maximal 1 kurzer Satz pro Antwort.
+- Maximal 2 kurze Sätze pro Antwort.
 - Nur EINE Frage pro Nachricht.
 - Kein Smalltalk, keine langen Erklärungen.
 - Starte mit: "Hey! Ich bin der Assistent von delcube und nehme deine Anfrage auf. Unser Team meldet sich dann persönlich."
 
 FRAGEN (der Reihe nach):
-1. vorstellungen: Wie soll das Art Toy aussehen? (Referenz, Charakter, eigene Idee)
-2. groesse: Wie groß soll die Figur sein? (max. 250mm Höhe)
-3. farbe: Welche Grundfarbe - Weiß oder Schwarz? Oberfläche glänzend oder matt?
-4. email: Wir brauchen deine E-Mail-Adresse damit sich unser Team bei dir melden kann.
-5. notizen: Hast du sonst noch etwas was du uns mitteilen willst?
+1. Was soll dargestellt werden? (Person, Charakter, eigene Idee, Referenz)
+2. Wie groß soll es sein? (max. 250mm Höhe)
+3. Welche Grundfarbe — Weiß oder Schwarz? Oberfläche glänzend oder matt?
+4. Bis wann wird es gebraucht?
+5. Deine E-Mail-Adresse?
 
 ZUSAMMENFASSUNG:
-Sobald du alle Pflichtfelder hast, antworte NUR mit diesem Block:
+Sobald du alle 5 Fragen beantwortet hast, antworte NUR mit diesem exakten Block — kein Text davor, kein Text danach, keine Erklärung:
 
 ZUSAMMENFASSUNG_BEREIT:
 {
-  "vorstellungen": "exakter Wert",
+  "was": "exakter Wert",
   "groesse": "exakter Wert",
   "farbe": "exakter Wert",
+  "zeitrahmen": "exakter Wert",
   "email": "exakter Wert",
   "notizen": ""
 }
 `.trim();
 
-// ════════════════════════════════════════════════════
-//  AB HIER NICHTS ÄNDERN
-// ════════════════════════════════════════════════════
+// ── AB HIER NICHTS ÄNDERN ─────────────────────────────
 exports.handler = async (event) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -97,12 +82,17 @@ exports.handler = async (event) => {
     const data = await response.json();
 
     if (!response.ok) {
-      return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: data.error?.message || 'Groq Fehler' }) };
+      console.error('[chat.js] Groq Fehler:', data);
+      return {
+        statusCode: 500,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: data.error?.message || 'Groq Fehler' }),
+      };
     }
 
     const text = data.choices?.[0]?.message?.content || 'Entschuldigung, da ist etwas schiefgelaufen.';
 
-    // Felder-Konfiguration mitsenden → Widget + submit.js bauen alles automatisch
+    // FELDER immer mitsenden — Widget + submit.js bauen alles automatisch
     return {
       statusCode: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -110,7 +100,12 @@ exports.handler = async (event) => {
     };
 
   } catch (err) {
-    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message }) };
+    console.error('[chat.js] Fehler:', err);
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: err.message }),
+    };
   }
 };
 
