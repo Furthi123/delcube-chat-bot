@@ -1,87 +1,94 @@
 /**
  * ═══════════════════════════════════════════════════════
- *  chat.js — Groq API Proxy (kostenlos)
- *  Netlify Function: /api/chat
+ *  chat.js — Einzige Stelle für Feld-Konfiguration
+ *
+ *  NUR HIER ÄNDERN:
+ *  1. FELDER → welche Infos gesammelt werden
+ *  2. SYSTEM_PROMPT → wie der Bot fragt
+ *
+ *  Alles andere (Summary-Card, E-Mail) passt sich
+ *  automatisch an — kein weiterer Code nötig.
  * ═══════════════════════════════════════════════════════
  */
 
+// ════════════════════════════════════════════════════
+//  FELDER — nur hier ändern
+//  key:    JSON-Schlüssel (kein Leerzeichen, keine Umlaute)
+//  label:  Anzeige-Name in Summary-Card und E-Mail
+//  pflicht: true = Bot fragt solange bis Antwort kommt
+// ════════════════════════════════════════════════════
+const FELDER = [
+  { key: 'vorstellungen', label: 'Vorstellungen',    pflicht: true  },
+  { key: 'groesse',       label: 'Größe',            pflicht: true  },
+  { key: 'farbe',         label: 'Farbe & Oberfläche', pflicht: true },
+  { key: 'email',         label: 'E-Mail',           pflicht: true  },
+  { key: 'notizen',       label: 'Notizen',          pflicht: false },
+];
+
+// ════════════════════════════════════════════════════
+//  SYSTEM PROMPT — Gesprächsverhalten anpassen
+// ════════════════════════════════════════════════════
 const SYSTEM_PROMPT = `
-Du bist ein direkter, freundlicher Assistent für delcube.com, das individuelle Art Toys im stylized/cartoon style herstellt.
-Ziel: Du nimmst die basics der Anfrage auf und leitest sie an unser Team weiter. Am Ende fasst du alles übersichtlich zusammen – der Kunde kann die Zusammenfassung dann mit einem Klick absenden.
+Du bist der Chat-Assistent von delcube.com. Wir bauen individuelle Art Toys – 3D-gedruckt, handnachbearbeitet, 100–150€, max. 250mm.
 
-WICHTIGE REGELN und Fakten über delcube
-- Stell IMMER nur EINE Frage pro Nachricht. Niemals zwei auf einmal.
-- Wenn jemand unsicher ist, hilf ihm mit konkreten Beispielen weiter
-- Kurze, natürliche Antworten. Kein Roman.
-- Wenn Budget angesprochen wird: "Für personalisierte Figuren starten wir meist bei 100–200€, das hängt von Größe und Aufwand ab."
-- Herstellung: 3D-modelliert, gedruckt und per Hand nachbearbeitet.
-- Unser 3D-Modellierer ist Janis. Kontaktpersonen im Team: Radek und David.
-- Wir nutzen Blender und 3D-Druckverfahren.
-- Preis: 100€ bis 150€.
-- Maße: Bis max. 250mm Höhe.
-- Farbe: Grundfarbe Weiß oder Schwarz. Keine Vollbemalung. Farbakzente nach Absprache möglich.
-- Besondere Features müssen persönlich besprochen werden.
+REGELN:
+- Maximal 2 kurze Sätze pro Antwort.
+- Nur EINE Frage pro Nachricht.
+- Kein Smalltalk, keine langen Erklärungen.
+- Starte mit: "Hey! Ich bin der Assistent von delcube und nehme deine Anfrage auf. Unser Team meldet sich dann persönlich."
 
-INFOS DIE DU SAMMELST (in natürlicher Reihenfolge, nicht als Liste):
-1. Wie soll deine Figur aussehen?
-2. Gewünschte Größe (bix max 250mm in der höhe)
-3. Zeitrahmen: Bis wann brauchst du die fertige Figur?
-4. E-Mail-Adresse des Kunden für Rückfragen und Bestätigung
+FRAGEN (der Reihe nach):
+1. Wie soll das Art Toy aussehen? (Referenz, Charakter, eigene Idee)
+2. Wie groß soll es sein? (max. 250mm Höhe)
+3. Welche Grundfarbe — Weiß oder Schwarz? Oberfläche glänzend oder matt?
+4. Deine E-Mail-Adresse?
 
 ZUSAMMENFASSUNG:
-Wenn du Felder 1–5 kennst und die E-Mail hast, erstell eine Zusammenfassung.
-Schreib zuerst: "Ich glaube, ich habe ein gutes Bild von deinem Projekt. Lass mich kurz zusammenfassen:"
-
-Dann folgt EXAKT dieses Format:
+Sobald du alle Pflichtfelder hast, antworte NUR mit diesem Block:
 
 ZUSAMMENFASSUNG_BEREIT:
 {
-  "was": "...",
-  "groesse": "...",
-  "zeitrahmen": "...",
-  "email": "...",
-  "bilder_hochgeladen": true,
-  "notizen": "..."
+  "vorstellungen": "exakter Wert",
+  "groesse": "exakter Wert",
+  "farbe": "exakter Wert",
+  "email": "exakter Wert",
+  "notizen": ""
 }
-
-Danach schreib: "Passt das so? Dann kann ich die Anfrage direkt ans Team weiterschicken."
 `.trim();
 
+// ════════════════════════════════════════════════════
+//  AB HIER NICHTS ÄNDERN
+// ════════════════════════════════════════════════════
 exports.handler = async (event) => {
-  const origin = event.headers.origin || event.headers.Origin || '';
-  const corsHeaders = buildCorsHeaders(origin);
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: corsHeaders, body: '' };
-  }
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: corsHeaders, body: 'Method Not Allowed' };
-  }
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: corsHeaders };
+  if (event.httpMethod !== 'POST')    return { statusCode: 405, headers: corsHeaders, body: 'Method Not Allowed' };
 
   try {
     const { messages } = JSON.parse(event.body || '{}');
 
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return {
-        statusCode: 400,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'messages fehlt oder leer' }),
-      };
+    if (!Array.isArray(messages) || !messages.length) {
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'messages fehlt' }) };
     }
 
-    // Groq API Call (OpenAI-kompatibles Format)
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type':  'application/json',
         'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile', // ← Bestes kostenloses Modell
-        max_tokens: 1024,
+        model:       'llama-3.3-70b-versatile',
+        max_tokens:  512,
+        temperature: 0.3,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          ...sanitizeMessages(messages),
+          ...sanitize(messages),
         ],
       }),
     });
@@ -89,60 +96,30 @@ exports.handler = async (event) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('[chat.js] Groq Fehler:', data);
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: data.error?.message || 'Groq API Fehler' }),
-      };
+      return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: data.error?.message || 'Groq Fehler' }) };
     }
 
     const text = data.choices?.[0]?.message?.content || 'Entschuldigung, da ist etwas schiefgelaufen.';
 
+    // Felder-Konfiguration mitsenden → Widget + submit.js bauen alles automatisch
     return {
       statusCode: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, felder: FELDER }),
     };
 
   } catch (err) {
-    console.error('[chat.js] Fehler:', err);
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Serverfehler. Bitte versuch es nochmal.' }),
-    };
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message }) };
   }
 };
 
-// Nachrichten für Groq aufbereiten (keine Bilder — Groq free unterstützt kein Vision)
-function sanitizeMessages(messages) {
+function sanitize(messages) {
   return messages.map(msg => {
-    // Wenn content ein Array ist (mit Bildern), nur Text extrahieren
     if (Array.isArray(msg.content)) {
-      const textParts = msg.content
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
-        .join(' ');
-      const hasImage = msg.content.some(b => b.type === 'image');
-      return {
-        role: msg.role,
-        content: hasImage
-          ? `${textParts} [Kunde hat ein Bild hochgeladen]`.trim()
-          : textParts,
-      };
+      const text   = msg.content.filter(b => b.type === 'text').map(b => b.text).join(' ');
+      const hasImg = msg.content.some(b => b.type === 'image');
+      return { role: msg.role, content: hasImg ? `${text} [Kunde hat ein Referenzbild hochgeladen]`.trim() : text };
     }
     return { role: msg.role, content: String(msg.content) };
   });
-}
-
-function buildCorsHeaders(origin) {
-  const allowed = (process.env.ALLOWED_ORIGINS || '')
-    .split(',').map(s => s.trim()).filter(Boolean);
-  const originOk = allowed.length === 0 || allowed.includes(origin);
-  return {
-    'Access-Control-Allow-Origin': originOk ? origin : allowed[0] || '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
 }
