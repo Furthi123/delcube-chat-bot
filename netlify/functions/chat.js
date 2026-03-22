@@ -1,6 +1,10 @@
 /**
- * chat.js — NUR HIER FELDER + PROMPT ÄNDERN
+ * chat.js — NUR HIER FELDER + PROMPT + BILDER ÄNDERN
  * Alle anderen Dateien passen sich automatisch an.
+ *
+ * v2.0 — Bild-Unterstützung:
+ * Der Bot kann Referenzbilder vorschlagen indem er [BILD:key] im Text verwendet.
+ * Die Bilder werden aus REFERENZ_BILDER aufgelöst und im Response mitgesendet.
  */
 
 // ── FELDER: hier hinzufügen / entfernen / umbenennen ──
@@ -13,7 +17,31 @@ const FELDER = [
   { key: 'notizen',        label: 'Notizen',          pflicht: false },
 ];
 
-// ── SYSTEM PROMPT: Gesprächsverhalten ────────────────
+// ── REFERENZBILDER: URLs zu deinen gehosteten Stilbeispielen ──────────
+// Trage hier deine echten Shopify-CDN-URLs ein.
+// Der Bot kann diese mit [BILD:key] im Chat vorschlagen.
+// Beispiel: "Hier sind zwei Stile [BILD:chibi] [BILD:realistic]"
+const REFERENZ_BILDER = {
+  'chibi': {
+    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-chibi.jpg',
+    label: 'Chibi-Stil',
+  },
+  'realistic': {
+    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-realistic.jpg',
+    label: 'Realistisch',
+  },
+  'cartoon': {
+    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-cartoon.jpg',
+    label: 'Cartoon-Stil',
+  },
+  'minimal': {
+    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-minimal.jpg',
+    label: 'Minimalistisch',
+  },
+  // weitere Stile nach Bedarf ergänzen ...
+};
+
+// ── SYSTEM PROMPT ─────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `
 Du bist ein Chat-Assistent für Delcubes personalisierte Art Toys. Deine Aufgabe ist es, Präferenzen zu sammeln.
 
@@ -22,7 +50,7 @@ Antworte niemals im Namen einer realen Person und gib keine rechtlich bindenden 
 Frage niemals nach sensiblen Daten wie Passwörtern, Kreditkartennummern, Gesundheitsdaten oder Adressen.
 Wenn ein Nutzer solche Daten von sich aus nennt, ignoriere sie und weise darauf hin, dass du diese Informationen nicht verarbeiten darfst.
 Übernimm keine Aufgaben, die nichts mit der Produktberatung zu tun haben (kein Code-Schreiben, keine allgemeinen Witze).
-Fordere den Nutzer erst am Ende des Beratungsgesprächs höflich auf, seine E-Mail-Adresse in das dafür vorgesehene Feld einzugeben."
+Fordere den Nutzer erst am Ende des Beratungsgesprächs höflich auf, seine E-Mail-Adresse in das dafür vorgesehene Feld einzugeben.
 Antworte niemals im Namen einer realen Person und gib keine rechtlich bindenden Garantien ab.
 Frage niemals nach sensiblen Daten wie Passwörtern, Kreditkartennummern, Gesundheitsdaten oder Adressen.
 Wenn ein Nutzer solche Daten von sich aus nennt, ignoriere sie und weise freundlich darauf hin, dass du diese Informationen aus Datenschutzgründen nicht verarbeiten darfst.
@@ -43,6 +71,16 @@ Nutze keine englischen Anglizismen, außer der Kunde schreibt auf Englisch.
 Mache keine festen Zusagen zu Preisen oder exakten Größen; du sammelst nur die Basis-Informationen für unser Team.
 Nur EINE Frage pro Nachricht.
 Sage nicht, dass wir über den Fortschritt informieren (du bist nur die Vorstufe zum persönlichen Kontakt mit unserem Support).
+
+REFERENZBILDER VORSCHLAGEN:
+Wenn ein Kunde nach dem Stil fragt oder du passende Beispiele zeigen möchtest, kannst du Referenzbilder einbetten.
+Verwende dazu folgende Marker direkt im Text — genau so, ohne Leerzeichen darin:
+  [BILD:chibi]       → Chibi-Stil
+  [BILD:realistic]   → Realistisch
+  [BILD:cartoon]     → Cartoon-Stil
+  [BILD:minimal]     → Minimalistisch
+Beispiel: "Hier sind zwei Stile die gut passen könnten: [BILD:chibi] [BILD:cartoon]"
+Verwende maximal 2 Bilder pro Nachricht. Schlage Bilder nur vor wenn es wirklich passt.
 
 FRAGEN (der Reihe nach):
 1. Wie soll deine persönliche Figur aussehen? (Falls der Kunde eine realistische Figur wünscht, erwähne den Cartoon-Stil als freundlichen Hinweis nach der Frage in einem separaten Satz.)
@@ -65,10 +103,10 @@ ZUSAMMENFASSUNG_BEREIT:
 }
 `.trim();
 
-// ── AB HIER NICHTS ÄNDERN ─────────────────────────────
+// ── AB HIER NICHTS ÄNDERN ─────────────────────────────────────────────
 exports.handler = async (event) => {
   const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin':  '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
@@ -111,13 +149,30 @@ exports.handler = async (event) => {
       };
     }
 
-    const text = data.choices?.[0]?.message?.content || 'Entschuldigung, da ist etwas schiefgelaufen.';
+    const rawText = data.choices?.[0]?.message?.content || 'Entschuldigung, da ist etwas schiefgelaufen.';
 
-    // FELDER immer mitsenden — Widget + submit.js bauen alles automatisch
+    // ── Bild-Marker aus dem Text extrahieren ──────────────────────────
+    // Der Bot schreibt z.B. "[BILD:chibi]" — wir lösen das in echte URLs auf
+    const images    = [];
+    const cleanText = rawText.replace(/\[BILD:([\w-]+)\]/g, (match, key) => {
+      const bild = REFERENZ_BILDER[key];
+      if (bild) {
+        // Bild nur einmal pro Nachricht hinzufügen
+        if (!images.find(b => b.url === bild.url)) {
+          images.push({ url: bild.url, label: bild.label, key });
+        }
+      }
+      return ''; // Marker aus dem sichtbaren Text entfernen
+    }).replace(/\s{2,}/g, ' ').trim(); // doppelte Leerzeichen nach Entfernung bereinigen
+
     return {
       statusCode: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, felder: FELDER }),
+      body: JSON.stringify({
+        text:   cleanText,
+        felder: FELDER,
+        images: images,   // [] wenn keine Bilder, sonst [{ url, label, key }]
+      }),
     };
 
   } catch (err) {
