@@ -1,10 +1,6 @@
 /**
- * chat.js — NUR HIER FELDER + PROMPT + BILDER ÄNDERN
+ * chat.js — NUR HIER FELDER + PROMPT ÄNDERN
  * Alle anderen Dateien passen sich automatisch an.
- *
- * v2.0 — Bild-Unterstützung:
- * Der Bot kann Referenzbilder vorschlagen indem er [BILD:key] im Text verwendet.
- * Die Bilder werden aus REFERENZ_BILDER aufgelöst und im Response mitgesendet.
  */
 
 // ── FELDER: hier hinzufügen / entfernen / umbenennen ──
@@ -17,7 +13,7 @@ const FELDER = [
   { key: 'notizen',        label: 'Notizen',          pflicht: false },
 ];
 
-// ── SYSTEM PROMPT ─────────────────────────────────────────────────────
+// ── SYSTEM PROMPT: Gesprächsverhalten ────────────────
 const SYSTEM_PROMPT = `
 Du bist ein Chat-Assistent für Delcubes personalisierte Art Toys. Deine Aufgabe ist es, Präferenzen zu sammeln.
 
@@ -26,7 +22,7 @@ Antworte niemals im Namen einer realen Person und gib keine rechtlich bindenden 
 Frage niemals nach sensiblen Daten wie Passwörtern, Kreditkartennummern, Gesundheitsdaten oder Adressen.
 Wenn ein Nutzer solche Daten von sich aus nennt, ignoriere sie und weise darauf hin, dass du diese Informationen nicht verarbeiten darfst.
 Übernimm keine Aufgaben, die nichts mit der Produktberatung zu tun haben (kein Code-Schreiben, keine allgemeinen Witze).
-Fordere den Nutzer erst am Ende des Beratungsgesprächs höflich auf, seine E-Mail-Adresse in das dafür vorgesehene Feld einzugeben.
+Fordere den Nutzer erst am Ende des Beratungsgesprächs höflich auf, seine E-Mail-Adresse in das dafür vorgesehene Feld einzugeben."
 Antworte niemals im Namen einer realen Person und gib keine rechtlich bindenden Garantien ab.
 Frage niemals nach sensiblen Daten wie Passwörtern, Kreditkartennummern, Gesundheitsdaten oder Adressen.
 Wenn ein Nutzer solche Daten von sich aus nennt, ignoriere sie und weise freundlich darauf hin, dass du diese Informationen aus Datenschutzgründen nicht verarbeiten darfst.
@@ -49,7 +45,7 @@ Nur EINE Frage pro Nachricht.
 Sage nicht, dass wir über den Fortschritt informieren (du bist nur die Vorstufe zum persönlichen Kontakt mit unserem Support).
 
 FRAGEN (der Reihe nach):
-1. Wie soll deine persönliche Figur aussehen? Hast du Referenzen? (Falls der Kunde eine realistische Figur wünscht, erwähne den Cartoon-Stil als freundlichen Hinweis nach der Frage in einem separaten Satz.)
+1. Wie soll deine persönliche Figur aussehen? (Falls der Kunde eine realistische Figur wünscht, erwähne den Cartoon-Stil als freundlichen Hinweis nach der Frage in einem separaten Satz.)
 2. Wie groß soll die Figur werden? (normale größe ist 250mm Höhe. Falls der Kunde eine größere Figur will, sage ihm das wir ihn dazu später persönlich noch einmal bzgl. der Umsetzbarkeit kontaktieren werden.)
 3. Wie soll die farbliche Gestaltung aussehen? (Wir bieten als Grundfarbe der Figur schwarz und weiß an, wenn einzelne akzente eine andere Farbe haben sollen muss dass ebenfalls später geklärt werden, der Kunde soll es aber mit in den Chat schreiben damit wir nachvollziehen können)
 4. Bis wann wird die Figur benötigt? (unsere 3D Modlierung dauert ca 2-3 Tage, Produktion und Nachbearbeitung weitere 5 Arbeitstage + Versand)
@@ -69,10 +65,10 @@ ZUSAMMENFASSUNG_BEREIT:
 }
 `.trim();
 
-// ── AB HIER NICHTS ÄNDERN ─────────────────────────────────────────────
+// ── AB HIER NICHTS ÄNDERN ─────────────────────────────
 exports.handler = async (event) => {
   const corsHeaders = {
-    'Access-Control-Allow-Origin':  '*',
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
@@ -115,30 +111,13 @@ exports.handler = async (event) => {
       };
     }
 
-    const rawText = data.choices?.[0]?.message?.content || 'Entschuldigung, da ist etwas schiefgelaufen.';
+    const text = data.choices?.[0]?.message?.content || 'Entschuldigung, da ist etwas schiefgelaufen.';
 
-    // ── Bild-Marker aus dem Text extrahieren ──────────────────────────
-    // Der Bot schreibt z.B. "[BILD:chibi]" — wir lösen das in echte URLs auf
-    const images    = [];
-    const cleanText = rawText.replace(/\[BILD:([\w-]+)\]/g, (match, key) => {
-      const bild = REFERENZ_BILDER[key];
-      if (bild) {
-        // Bild nur einmal pro Nachricht hinzufügen
-        if (!images.find(b => b.url === bild.url)) {
-          images.push({ url: bild.url, label: bild.label, key });
-        }
-      }
-      return ''; // Marker aus dem sichtbaren Text entfernen
-    }).replace(/\s{2,}/g, ' ').trim(); // doppelte Leerzeichen nach Entfernung bereinigen
-
+    // FELDER immer mitsenden — Widget + submit.js bauen alles automatisch
     return {
       statusCode: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text:   cleanText,
-        felder: FELDER,
-        images: images,   // [] wenn keine Bilder, sonst [{ url, label, key }]
-      }),
+      body: JSON.stringify({ text, felder: FELDER }),
     };
 
   } catch (err) {
