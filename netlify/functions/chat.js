@@ -17,30 +17,6 @@ const FELDER = [
   { key: 'notizen',        label: 'Notizen',          pflicht: false },
 ];
 
-// ── REFERENZBILDER: URLs zu deinen gehosteten Stilbeispielen ──────────
-// Trage hier deine echten Shopify-CDN-URLs ein.
-// Der Bot kann diese mit [BILD:key] im Chat vorschlagen.
-// Beispiel: "Hier sind zwei Stile [BILD:chibi] [BILD:realistic]"
-const REFERENZ_BILDER = {
-  'chibi': {
-    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-chibi.jpg',
-    label: 'Chibi-Stil',
-  },
-  'realistic': {
-    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-realistic.jpg',
-    label: 'Realistisch',
-  },
-  'cartoon': {
-    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-cartoon.jpg',
-    label: 'Cartoon-Stil',
-  },
-  'minimal': {
-    url:   'https://cdn.shopify.com/s/files/1/XXXX/XXXX/files/style-minimal.jpg',
-    label: 'Minimalistisch',
-  },
-  // weitere Stile nach Bedarf ergänzen ...
-};
-
 // ── SYSTEM PROMPT ─────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `
 Du bist ein Chat-Assistent für Delcubes personalisierte Art Toys. Deine Aufgabe ist es, Präferenzen zu sammeln.
@@ -72,18 +48,8 @@ Mache keine festen Zusagen zu Preisen oder exakten Größen; du sammelst nur die
 Nur EINE Frage pro Nachricht.
 Sage nicht, dass wir über den Fortschritt informieren (du bist nur die Vorstufe zum persönlichen Kontakt mit unserem Support).
 
-REFERENZBILDER VORSCHLAGEN:
-Wenn ein Kunde nach dem Stil fragt oder du passende Beispiele zeigen möchtest, kannst du Referenzbilder einbetten.
-Verwende dazu folgende Marker direkt im Text — genau so, ohne Leerzeichen darin:
-  [BILD:chibi]       → Chibi-Stil
-  [BILD:realistic]   → Realistisch
-  [BILD:cartoon]     → Cartoon-Stil
-  [BILD:minimal]     → Minimalistisch
-Beispiel: "Hier sind zwei Stile die gut passen könnten: [BILD:chibi] [BILD:cartoon]"
-Verwende maximal 2 Bilder pro Nachricht. Schlage Bilder nur vor wenn es wirklich passt.
-
 FRAGEN (der Reihe nach):
-1. Wie soll deine persönliche Figur aussehen? (Falls der Kunde eine realistische Figur wünscht, erwähne den Cartoon-Stil als freundlichen Hinweis nach der Frage in einem separaten Satz.)
+1. Wie soll deine persönliche Figur aussehen? Hast du Referenzen? (Falls der Kunde eine realistische Figur wünscht, erwähne den Cartoon-Stil als freundlichen Hinweis nach der Frage in einem separaten Satz.)
 2. Wie groß soll die Figur werden? (normale größe ist 250mm Höhe. Falls der Kunde eine größere Figur will, sage ihm das wir ihn dazu später persönlich noch einmal bzgl. der Umsetzbarkeit kontaktieren werden.)
 3. Wie soll die farbliche Gestaltung aussehen? (Wir bieten als Grundfarbe der Figur schwarz und weiß an, wenn einzelne akzente eine andere Farbe haben sollen muss dass ebenfalls später geklärt werden, der Kunde soll es aber mit in den Chat schreiben damit wir nachvollziehen können)
 4. Bis wann wird die Figur benötigt? (unsere 3D Modlierung dauert ca 2-3 Tage, Produktion und Nachbearbeitung weitere 5 Arbeitstage + Versand)
