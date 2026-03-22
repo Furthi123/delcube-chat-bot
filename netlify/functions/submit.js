@@ -1,10 +1,10 @@
 /**
  * submit.js — liest Felder dynamisch, vollständiger Chat-Verlauf
  *
- * v2.0 — Bild-Unterstützung:
- * Erwartet data.images als Array von { url, label } (Bot-Bilder, vom chat.js gesammelt).
- * Nutzer-Uploads (base64) kommen weiterhin via s._images.
- * Beide werden zusammengeführt und als E-Mail-Anhänge verschickt.
+ * v2.1 — Kunden-Bilder Fix:
+ * Erwartet data.userImages als Array von { data: base64, media_type }
+ * — das sind ALLE Bilder die der Kunde im Gespräch gesendet hat.
+ * Diese werden als Anhänge an die Studio-Mail gehängt.
  */
 const nodemailer = require('nodemailer');
 
@@ -24,13 +24,11 @@ exports.handler = async (event) => {
     const chatHistory   = data.chatHistory || [];
     const customerEmail = (typeof s === 'object' ? s.email : data.email) || '';
 
-    // ── Bilder laden ────────────────────────────────────────────────────
-    // Bot-Bilder (URL-basiert) + Nutzer-Uploads (base64) zusammenführen
-    const botImgs  = data.images   || [];   // [{ url, label }] vom figuren-chat.js
-    const userImgs = s._images     || [];   // [{ data, media_type }] Nutzer-Uploads
-    const attachments = await buildAttachments(botImgs, userImgs);
+    // FIX v2.1: Kunden-Bilder kommen jetzt als data.userImages
+    // Format: [{ data: base64string, media_type: 'image/jpeg' }]
+    const userImages  = data.userImages || s._images || []; // s._images als Fallback
+    const attachments = buildAttachments(userImages);
 
-    // ── SMTP ─────────────────────────────────────────────────────────────
     const transporter = nodemailer.createTransport({
       host:   process.env.SMTP_HOST,
       port:   parseInt(process.env.SMTP_PORT),
@@ -48,7 +46,7 @@ exports.handler = async (event) => {
       cid:         a.cid,
     }));
 
-    // Studio-Mail
+    // Studio-Mail (mit Bildern als Anhang + eingebettet)
     await transporter.sendMail({
       from:        `"${process.env.FROM_NAME}" <${process.env.SMTP_USER}>`,
       replyTo:     customerEmail,
@@ -58,14 +56,13 @@ exports.handler = async (event) => {
       attachments: mailAttachments,
     });
 
-    // Kunden-Bestätigung
+    // Kunden-Bestätigung (ohne Bilder — Kunde hat sie selbst geschickt)
     if (customerEmail) {
       await transporter.sendMail({
-        from:        `"${process.env.FROM_NAME || 'delcube'}" <${process.env.SMTP_USER}>`,
-        to:          customerEmail,
-        subject:     'Deine Anfrage ist bei uns angekommen ✓',
-        html:        customerHTML(s, felder, process.env.STUDIO_EMAIL, process.env.FROM_NAME, attachments),
-        attachments: mailAttachments,
+        from:    `"${process.env.FROM_NAME || 'delcube'}" <${process.env.SMTP_USER}>`,
+        to:      customerEmail,
+        subject: 'Deine Anfrage ist bei uns angekommen ✓',
+        html:    customerHTML(s, felder, process.env.STUDIO_EMAIL, process.env.FROM_NAME),
       });
     }
 
@@ -80,7 +77,7 @@ exports.handler = async (event) => {
       }
       if (attachments.length) {
         lines.push('');
-        lines.push(`Referenzbilder (${attachments.length}): ${attachments.map(a => a.label).join(', ')}`);
+        lines.push(`Referenzbilder vom Kunden: ${attachments.length} Bild(er) angehängt`);
       }
       await fetch(`${shopUrl}/contact`, {
         method:   'POST',
@@ -104,53 +101,20 @@ exports.handler = async (event) => {
   }
 };
 
-// ── Bilder aufbereiten ────────────────────────────────────────────────
-// Nimmt Bot-URL-Bilder und Nutzer-Base64-Uploads, liefert ein einheitliches
-// Array von Anhang-Objekten zurück (max. 5 gesamt).
-async function buildAttachments (botImgs, userImgs) {
-  const results = [];
-
-  // 1. Bot-Bilder (URL → per fetch downloaden → base64)
-  for (let i = 0; i < botImgs.length && results.length < 5; i++) {
-    const img = botImgs[i];
-    if (!img.url) continue;
-    try {
-      const resp        = await fetch(img.url, { signal: AbortSignal.timeout(8000) });
-      const contentType = resp.headers.get('content-type') || 'image/jpeg';
-      const buf         = await resp.arrayBuffer();
-      const ext         = contentType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
-      const label       = img.label || `Referenzbild ${results.length + 1}`;
-
-      results.push({
-        filename:    `referenz-${results.length + 1}-${label.replace(/\s+/g, '-').toLowerCase()}.${ext}`,
-        content:     Buffer.from(buf).toString('base64'),
-        encoding:    'base64',
-        contentType,
-        cid:         `bild${results.length}@delcube`,
-        label,
-        type:        'bot',
-      });
-    } catch (err) {
-      console.warn(`[submit] Bot-Bild ${i + 1} konnte nicht geladen werden:`, err.message);
-    }
-  }
-
-  // 2. Nutzer-Uploads (base64, direkt verwenden)
-  for (let i = 0; i < userImgs.length && results.length < 5; i++) {
-    const img = userImgs[i];
-    if (!img.data) continue;
-    results.push({
-      filename:    `kundenupload-${i + 1}.jpg`,
+// ── Kunden-Bilder aufbereiten (base64 → Anhang-Objekte) ─────────────
+// Keine async nötig — base64 ist bereits vorhanden, kein Download nötig.
+function buildAttachments (userImages) {
+  return userImages.slice(0, 5).map(function (img, i) {
+    const contentType = img.media_type || 'image/jpeg';
+    const ext         = contentType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+    return {
+      filename:    `referenz-${i + 1}.${ext}`,
       content:     img.data,
       encoding:    'base64',
-      contentType: img.media_type || 'image/jpeg',
-      cid:         `bild${results.length}@delcube`,
-      label:       `Kunden-Upload ${i + 1}`,
-      type:        'user',
-    });
-  }
-
-  return results;
+      contentType: contentType,
+      cid:         `bild${i}@delcube`,
+    };
+  });
 }
 
 // ── Studio E-Mail ─────────────────────────────────────────────────────
@@ -176,28 +140,20 @@ function studioHTML (s, felder, chatHistory, attachments, customerEmail) {
       </tr>`).join('');
   }
 
-  // Bilder-Block — Bot-Referenzen und Nutzer-Uploads getrennt anzeigen
-  const botAtts  = attachments.filter(a => a.type === 'bot');
-  const userAtts = attachments.filter(a => a.type === 'user');
-
-  const imgSection = (title, atts) => {
-    if (!atts.length) return '';
-    return `<div style="margin-top:20px">
-      <p style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px">${title} (${atts.length})</p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        ${atts.map(a => `
-          <div style="text-align:center">
+  // Kunden-Bilder eingebettet via CID
+  const bilderHTML = attachments.length
+    ? `<div style="margin-top:24px">
+        <p style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px">
+          Referenzbilder vom Kunden (${attachments.length})
+        </p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          ${attachments.map((a, i) => `
             <img src="cid:${a.cid}"
-                 style="max-width:180px;max-height:180px;border-radius:8px;border:1px solid #ddd;display:block"
-                 alt="${esc(a.label)}">
-            <p style="margin:5px 0 0;font-size:11px;color:#999">${esc(a.label)}</p>
-          </div>`).join('')}
-      </div>
-    </div>`;
-  };
-
-  const bilderHTML = imgSection('Vom Bot vorgeschlagene Stile', botAtts)
-                   + imgSection('Kunden-Uploads', userAtts);
+                 style="max-width:200px;max-height:200px;border-radius:8px;border:1px solid #ddd;display:block"
+                 alt="Referenzbild ${i + 1}">`).join('')}
+        </div>
+      </div>`
+    : '';
 
   // Chat-Verlauf
   const verlaufHTML = chatHistory.length
@@ -248,8 +204,8 @@ function studioHTML (s, felder, chatHistory, attachments, customerEmail) {
 </body></html>`;
 }
 
-// ── Kunden-Bestätigung ────────────────────────────────────────────────
-function customerHTML (s, felder, studioEmail, studioName, attachments) {
+// ── Kunden-Bestätigung (ohne Bilder) ─────────────────────────────────
+function customerHTML (s, felder, studioEmail, studioName) {
   let rows = '';
   if (felder && Array.isArray(felder)) {
     rows = felder
@@ -271,25 +227,6 @@ function customerHTML (s, felder, studioEmail, studioName, attachments) {
       </p>`).join('');
   }
 
-  // Nur Bot-Referenzbilder in der Kundenmail — keine Nutzer-Uploads
-  const botAtts   = attachments.filter(a => a.type === 'bot');
-  const bilderHTML = botAtts.length
-    ? `<div style="margin-top:20px;padding:16px 20px;background:#f9f8f6;border-radius:8px">
-        <p style="margin:0 0 12px;font-size:11px;color:#aaa;letter-spacing:.08em;text-transform:uppercase">
-          Referenzstile aus deinem Gespräch (${botAtts.length})
-        </p>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          ${botAtts.map(a => `
-            <div style="text-align:center">
-              <img src="cid:${a.cid}"
-                   style="max-width:120px;max-height:120px;border-radius:6px;border:1px solid #e5e5e5;display:block"
-                   alt="${esc(a.label)}">
-              <p style="margin:5px 0 0;font-size:11px;color:#aaa">${esc(a.label)}</p>
-            </div>`).join('')}
-        </div>
-      </div>`
-    : '';
-
   return `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
   <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e5e5">
@@ -306,7 +243,6 @@ function customerHTML (s, felder, studioEmail, studioName, attachments) {
         <p style="margin:0 0 12px;font-size:11px;color:#aaa;letter-spacing:.08em;text-transform:uppercase">Deine Angaben</p>
         ${rows}
       </div>
-      ${bilderHTML}
       <p style="margin:18px 0 0;font-size:13px;color:#888;line-height:1.7">
         Noch etwas ergänzen? Antworte einfach auf diese Mail.
       </p>
